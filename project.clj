@@ -1,6 +1,8 @@
 (defproject sqlingvo-jdbc "0.1.0-SNAPSHOT"
-  :description "FIXME: write description"
-  :url "http://example.com/FIXME"
-  :license {:name "Eclipse Public License"
-            :url "http://www.eclipse.org/legal/epl-v10.html"}
-  :dependencies [[org.clojure/clojure "1.8.0"]])
+  :description "Integration library between SQLingvo and clojure.java.jdbc"
+  :url "https://github.com/caleb/sqlingvo-jdbc"
+  :license {:name "MIT License"
+            :url "https://opensource.org/licenses/MIT"}
+  :dependencies [[org.clojure/clojure "1.8.0"]
+                 [sqlingvo "0.8.13"]
+                 [org.clojure/java.jdbc "0.6.1"]])
