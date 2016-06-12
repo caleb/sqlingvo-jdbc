@@ -131,14 +131,23 @@
   ([spec] (db spec {}))
   ([spec {:keys [sql-quote eval-fn]
           :or {sql-quote sqlingvo-util/sql-quote-double-quote
+               sql-name sqlingvo-util/sql-name-underscore
                eval-fn #'sqlingvo-eval}
           :as sqlingvo-opts}]
    (sqlingvo-db/map->Database (merge {:sql-quote sql-quote
                                       :eval-fn eval-fn
+                                      :sql-name sql-name
                                       ::spec spec}
                                      sqlingvo-opts))))
 
 (comment
+  (def d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"))
+  (sqlingvo/sql (sqlingvo/select d [:encrypted-password]
+     (sqlingvo/from :products)))
+
+  (sqlingvo/sql (sqlingvo/select (sqlingvo-db/postgresql) [:encrypted-password]
+                  (sqlingvo/from :products)))
+
   (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
     @(sqlingvo/drop-table d [:products])
     @(sqlingvo/drop-table d [:films]))

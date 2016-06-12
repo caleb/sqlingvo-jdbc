@@ -19,6 +19,21 @@ Other than that, we store the usual clojure.java.jdbc spec in
 The wrapped clojure.java.jdbc functions simple call the parent clojure.java.jdbc
 version with this embedded spec.
 
+## Field Names
+
+By default SQLingvo-JDBC transforms dashes in column names from Clojure to
+underscores when building SQL statements.
+
+To change this specify a function in the `:sql-name` key of the sqlingvo
+options. For example, if you wanted to change all fields to have uppercase
+names:
+
+```clojure
+(sqlingvo-jdbc/db db-spec {:sql-name string/upper-case})
+```
+
+
+
 ## Usage
 
 Just use the fm.land.sqlingvo versions of the corresponding clojure.java.jdbc
