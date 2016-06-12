@@ -1,4 +1,4 @@
-(ns land.fm.sqlingvo-jdbc
+(ns fm.land.sqlingvo-jdbc
   (:require [sqlingvo.core :as sqlingvo]
             [sqlingvo.db :as sqlingvo-db]
             [sqlingvo.util :as sqlingvo-util]
