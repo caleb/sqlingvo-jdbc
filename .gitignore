@@ -1,3 +1,5 @@
+/.idea
+/sqlingvo-jdbc.iml
 /target
 /classes
 /checkouts
