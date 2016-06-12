@@ -16,19 +16,6 @@
 (defn add-connection [db con]
   (swap-spec db (jdbc/add-connection (::spec db) con)))
 
-;; (defmacro db-function [name [db & args]]
-;;   "Defines a function named `name` that simply calls the version in
-;;   clojure.java.jdbc but looks up the proper connection object to use. (See
-;;   fm.land.sqlingvo-jdbc/db)"
-;;   (let [[args [amp rest]] (split-with #(not= % '&) args)]
-;;     (cond
-;;       rest
-;;       `(defn ~name [~db ~@args & ~rest]
-;;          (apply ~(symbol "jdbc" (str name)) (db-conn ~db) ~@args ~rest))
-;;       :else
-;;       `(defn ~name [~db ~@args]
-;;          (~(symbol "jdbc" (str name)) (db-conn ~db) ~@args)))))
-
 (defn- body-builder [name params]
   "Takes multiple paramter lists and builds bodies for our db-function.
    name - The name of the function we're building. We need this so we can call the proper jdbc function
@@ -76,7 +63,16 @@
        (let [~(first binding) (add-connection db# con#)]
          ~@body))))
 
-;; (defmacro with-db-metadata
+(defmacro with-db-metadata
+  "Evaluates body in the context of an active connection with metadata bound
+   to the specified name. See also metadata-result for dealing with the results
+   of operations that retrieve information from the metadata.
+   (with-db-metadata [md db-spec]
+     ... md ...)"
+  [binding & body]
+  `(with-open [con# (get-connection ~(second binding))]
+     (let [~(first binding) (.getMetaData con#)]
+       ~@body)))
 
 (db-function get-connection [db])
 (db-function db-find-connection [db])
@@ -143,11 +139,33 @@
                                      sqlingvo-opts))))
 
 (comment
+  (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
+    @(sqlingvo/drop-table d [:products])
+    @(sqlingvo/drop-table d [:films]))
+
+  (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
+    @(sqlingvo/create-table d :products
+       (sqlingvo/column :id :bigserial :primary-key? true)
+       (sqlingvo/column :name :varchar)
+       (sqlingvo/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+       (sqlingvo/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
+    @(sqlingvo/create-table d :films
+       (sqlingvo/column :code :char :length 5 :primary-key? true)
+       (sqlingvo/column :title :varchar :length 40 :not-null? true)
+       (sqlingvo/column :did :integer :not-null? true)
+       (sqlingvo/column :date-prod :date)
+       (sqlingvo/column :kind :varchar :length 10)
+       (sqlingvo/column :len :interval)
+       (sqlingvo/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+       (sqlingvo/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now))))
+
   (let [spec {:subprotocol "postgresql"
               :subname "//localhost/sqlingvo?user=postgres&password=gnome"
               :classname "org.postgresql.Driver"}
         spec "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"
         d (db spec)]
+
+
     (execute! d ["DELETE FROM products"])
     (execute! d ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
     (query d ["SELECT * FROM products"])
@@ -179,18 +197,6 @@
       @(sqlingvo/select tx [:*]
                         (sqlingvo/from :products)))
 
-    @(sqlingvo/drop-table d [:films])
-
-    @(sqlingvo/create-table d :films
-                            (sqlingvo/column :code :char :length 5 :primary-key? true)
-                            (sqlingvo/column :title :varchar :length 40 :not-null? true)
-                            (sqlingvo/column :did :integer :not-null? true)
-                            (sqlingvo/column :date-prod :date)
-                            (sqlingvo/column :kind :varchar :length 10)
-                            (sqlingvo/column :len :interval)
-                            (sqlingvo/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-                            (sqlingvo/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
-
     (with-db-connection [conn d]
       (with-db-transaction [tx conn]
         @(sqlingvo/select tx [:*] (sqlingvo/from :products))
@@ -209,7 +215,14 @@
 
     @(sqlingvo/with d [:bwah (sqlingvo/select d [:* (sqlingvo/as "Oh HAI MARK" :tommy)]
                                               (sqlingvo/from :products))]
-                    (sqlingvo/select d [:*] (sqlingvo/from :bwah))))
+       (sqlingvo/select d [:*] (sqlingvo/from :bwah)))
+
+    (with-db-metadata [metadata d]
+      (let [table-info (jdbc/metadata-query (.getTables metadata
+                                                    nil nil nil
+                                                    (into-array ["TABLE" "VIEW"])))]
+        table-info))
+    )
 
   (let [{:keys [bwah] :or {bwah "oh hai"}} {}]
     bwah))
