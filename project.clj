@@ -1,4 +1,4 @@
-(defproject fm.land/sqlingvo-jdbc "0.1.3-SNAPSHOT"
+(defproject fm.land/sqlingvo-jdbc "0.1.4-SNAPSHOT"
   :description "Integration library between SQLingvo and clojure.java.jdbc"
   :url "https://github.com/caleb/sqlingvo-jdbc"
   :license {:name "MIT License"
