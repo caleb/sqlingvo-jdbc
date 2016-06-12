@@ -29,15 +29,30 @@ options. For example, if you wanted to change all fields to have uppercase
 names:
 
 ```clojure
-(sqlingvo-jdbc/db db-spec {:sql-name string/upper-case})
+(sqlingvo-jdbc/db db-spec {::sqlingvo-jdbc/sqlingvo-opts {:sql-name clojure.string/upper-case}})
 ```
 
+Likewise, when returning names from the database, they will be converted to
+kebob lower case. To change this, set the
+[::sqlingvo-jdbc/jdbc-opts ::sqlingvo-jdbc/query-opts :identifiers] key of the
+options argument to `db` to be a function of your choice (use `identity` if you
+want no conversion to take place):
 
+```clojure
+;; The third option to db are options for clojure.java.jdbc
+;; This configuration will convert all field names to uppercase when executing query statement
+(def db (sqlingvo-jdbc/db db-spec {::sqlingvo-jdbc/jdbc-opts
+                                   {::sqlingvo-jdbc/query-opts {:identifiers #(string/upper-case %)}}}))
+
+@(sqlingvo/select db [:*] (sqlingvo/from :users)) ;; [{:NAME "Ada Lovelace" :EMAIL "ada@lovelace.net"}]
+```
 
 ## Usage
 
-Just use the fm.land.sqlingvo versions of the corresponding clojure.java.jdbc
-functions and pass the database spec from the `db` function:
+First create a database handle by calling `fm.land.sqlingvo/db`.
+
+Then just use the fm.land.sqlingvo versions of the corresponding clojure.java.jdbc
+functions:
 
 ```clojure
 (require '([fm.land.sqlingvo-jdbc :as sqlingvo-jdbc]

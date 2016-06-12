@@ -85,7 +85,6 @@
 (db-function db-do-prepared [db sql-params] [db transaction? sql-params] [db transaction? sql-params opts])
 (db-function db-query-with-resultset [db sql-params func] [db sql-params func opts])
 
-;; (db-function query [db sql-params] [db sql-params opts])
 (defn query
   ([db sql-params] (query db sql-params {}))
   ([db sql-params opts]
@@ -138,74 +137,66 @@
 
   spec - The database spec used to connect to your database with clojure.java.jdbc
 
-  sqlingvo-opts - The options passed to sqlingvo's Database
+  opts - Options for configuring SQLingvo-JDBC.
+  There are two keys for configuring how SQLingvo-JDBC works:
+
+  ::sqlingvo-opts - The options passed to sqlingvo's Database
   record (usually you can leave this blank, unless you are using MySQL and need
   to change the :sql-quote option to sqlingvo.util/sql-quote-backtick)
 
-  jdbc-opts - Options for clojure.java.jdbc functions.
+  ::jdbc-opts - Options for clojure.java.jdbc functions.
 
-  Default sqlingvo-opts:
+  Default ::sqlingvo-opts:
   - :sql-quote sqlingvo.util/sql-double-quote-quote
   - :sql-name  sqlingvo.util/sql-name-underscore
 
-  Default JDBC opts:
+  Default ::jdbc-opts:
   - ::query-opts These are options passed to clojure.java.jdbc/query when executing SQLingvo statements
     - :identifiers fm.land.sqlingvo-jdbc/identifiers - (this converts field names from the database to be kebob lower case)"
   ([spec] (db spec {}))
-  ([spec sqlingvo-opts] (db spec sqlingvo-opts {}))
-  ([spec
-    {:keys [sql-quote sql-name eval-fn]
-     :or   {sql-quote sql-util/sql-quote-double-quote
-            sql-name  sql-util/sql-name-underscore
-            eval-fn   #'sqlingvo-eval}
-     :as   sqlingvo-opts}
-    jdbc-opts]
-   (sql-db/map->Database (merge {:sql-quote   sql-quote
-                                 :eval-fn     eval-fn
-                                 :sql-name    sql-name
-                                 ::jdbc-opts  (merge {::query-opts {:identifiers identifiers}}
-                                                     jdbc-opts)
-                                 ::spec       spec}
-                                sqlingvo-opts))))
+  ([spec opts]
+   (let [sqlingvo-opts (merge {:sql-quote sql-util/sql-quote-double-quote
+                               :eval-fn   #'sqlingvo-eval
+                               :sql-name  sql-util/sql-name-underscore}
+                              (::sqlingvo-opts opts))
+         jdbc-opts     (merge {::query-opts {:identifiers identifiers}}
+                              (::jdbc-opts opts))]
+     (sql-db/map->Database (merge {::jdbc-opts jdbc-opts
+                                   ::spec      spec}
+                                  sqlingvo-opts)))))
 
 (comment
   (def d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"))
-  (def uppercase-d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo" {} {::query-opts {:identifiers #(clojure.string/upper-case %)}}))
-  (sql/sql (sql/select d [:encrypted-password]
-                       (sql/from :products)))
+  (def uppercase-d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo" {::jdbc-opts {::query-opts {:identifiers #(clojure.string/upper-case %)}}}))
 
-  (sql/sql (sql/select (sql-db/postgresql) [:encrypted-password]
-                       (sql/from :products)))
+  @(sql/drop-table d [:products])
+  @(sql/drop-table d [:films])
 
-  (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
-    @(sql/drop-table d [:products])
-    @(sql/drop-table d [:films]))
+  @(sql/create-table d :products
+     (sql/column :id :bigserial :primary-key? true)
+     (sql/column :name :varchar)
+     (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+     (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
 
-  (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
-    @(sql/create-table d :products
-                       (sql/column :id :bigserial :primary-key? true)
-                       (sql/column :name :varchar)
-                       (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-                       (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
-    @(sql/create-table d :films
-                       (sql/column :code :char :length 5 :primary-key? true)
-                       (sql/column :title :varchar :length 40 :not-null? true)
-                       (sql/column :did :integer :not-null? true)
-                       (sql/column :date-prod :date)
-                       (sql/column :UPPER-CASE-DATE :date)
-                       (sql/column :kind :varchar :length 10)
-                       (sql/column :len :interval)
-                       (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-                       (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now))))
+  @(sql/create-table d :films
+     (sql/column :code :char :length 5 :primary-key? true)
+     (sql/column :title :varchar :length 40 :not-null? true)
+     (sql/column :did :integer :not-null? true)
+     (sql/column :date-prod :date)
+     (sql/column :UPPER-CASE-DATE :date)
+     (sql/column :kind :varchar :length 10)
+     (sql/column :len :interval)
+     (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+     (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
 
   (try
     @(sql/insert d :films []
-                 (sql/values [{:code (str (rand-int 1000)) :title "The Room" :did 42}]))
+       (sql/values [{:code (str (rand-int 1000)) :title "The Room" :did 42}]))
     (catch Exception e
       (println (.. e getNextException))))
 
   @(sql/select d [:*]
-               (sql/from :films))
+     (sql/from :films))
 
   (with-db-connection [conn d]
     (execute! conn ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
@@ -215,70 +206,63 @@
     (execute! conn ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
     (query conn ["SELECT * FROM products"]))
 
-  (let [spec {:subprotocol "postgresql"
-              :subname     "//localhost/sqlingvo?user=postgres&password=gnome"
-              :classname   "org.postgresql.Driver"}
-        spec "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"
-        d    (db spec)]
+  (execute! d ["DELETE FROM products"])
+  (execute! d ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
+  (query d ["SELECT * FROM products"])
 
+  (with-db-transaction [tx d]
+    (execute! tx ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
+    (db-set-rollback-only! tx)
+    (db-unset-rollback-only! tx)
+    (query tx ["SELECT * FROM products"]))
 
-    (execute! d ["DELETE FROM products"])
-    (execute! d ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
-    (query d ["SELECT * FROM products"])
+  (with-db-connection [conn d]
+    (execute! conn ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
+    (query conn ["SELECT * FROM products"]))
 
-    (with-db-transaction [tx d]
+  (with-db-connection [conn d]
+    (with-db-transaction [tx conn]
       (execute! tx ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
       (db-set-rollback-only! tx)
-      (db-unset-rollback-only! tx)
-      (query tx ["SELECT * FROM products"]))
+      (query tx ["SELECT * FROM products"])))
 
-    (with-db-connection [conn d]
-      (execute! conn ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
-      (query conn ["SELECT * FROM products"]))
+  (query d ["SELECT * FROM products"])
+  (get-connection d)
 
-    (with-db-connection [conn d]
-      (with-db-transaction [tx conn]
-        (execute! tx ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
-        (db-set-rollback-only! tx)
-        (query tx ["SELECT * FROM products"])))
+  @(sql/select d [:*] (sql/from :products))
+  (with-db-transaction [tx d]
+    @(sql/insert tx :products []
+       (sql/values [{:name "INSERT FROM SQLINGVO"}]))
+    ;; (db-set-rollback-only! tx)
+    @(sql/select tx [:*]
+       (sql/from :products)))
 
-    (query d ["SELECT * FROM products"])
-    (get-connection d)
+  (with-db-connection [conn d]
+    (with-db-transaction [tx conn]
+      @(sql/select tx [:*] (sql/from :products))
+      @(sql/delete tx :products (sql/where '(ilike :name "%SQLINGVO")))
+      @(sql/select tx [:*] (sql/from :products))))
 
-    @(sql/select d [:*] (sql/from :products))
-    (with-db-transaction [tx d]
-      @(sql/insert tx :products []
-                   (sql/values [{:name "INSERT FROM SQLINGVO"}]))
-      ;; (db-set-rollback-only! tx)
-      @(sql/select tx [:*]
-                   (sql/from :products)))
+  @(sql/intersect (sql/select d [:name] (sql/from :products))
+                  (sql/select d [:title] (sql/from :films)))
 
-    (with-db-connection [conn d]
-      (with-db-transaction [tx conn]
-        @(sql/select tx [:*] (sql/from :products))
-        @(sql/delete tx :products (sql/where '(ilike :name "%SQLINGVO")))
-        @(sql/select tx [:*] (sql/from :products))))
+  @(sql/explain d (sql/intersect (sql/select d [:name] (sql/from :products))
+                                 (sql/select d [:title] (sql/from :films))))
+  @(sqlingvo/truncate d [:products :films])
 
-    @(sql/intersect (sql/select d [:name] (sql/from :products))
-                    (sql/select d [:title] (sql/from :films)))
+  @(sql/union (sql/select d [:name] (sql/from :products))
+              (sql/select d [:title] (sql/from :films)))
 
-    @(sql/explain d (sql/intersect (sql/select d [:name] (sql/from :products))
-                                   (sql/select d [:title] (sql/from :films))))
-    ;; @(sqlingvo/truncate d [:products :films])
+  @(sql/with d [:bwah (sql/select d [:* (sql/as "Oh HAI MARK" :tommy)]
+                        (sql/from :products))]
+     (sql/select d [:*] (sql/from :bwah)))
 
-    @(sql/union (sql/select d [:name] (sql/from :products))
-                (sql/select d [:title] (sql/from :films)))
+  (with-db-metadata [metadata d]
+    (let [table-info (jdbc/metadata-query (.getTables metadata
+                                                      nil nil nil
+                                                      (into-array ["TABLE" "VIEW"])))]
+      table-info))
 
-    @(sql/with d [:bwah (sql/select d [:* (sql/as "Oh HAI MARK" :tommy)]
-                                    (sql/from :products))]
-               (sql/select d [:*] (sql/from :bwah)))
-
-    (with-db-metadata [metadata d]
-      (let [table-info (jdbc/metadata-query (.getTables metadata
-                                                        nil nil nil
-                                                        (into-array ["TABLE" "VIEW"])))]
-        table-info))
-    )
 
   (let [{:keys [bwah] :or {bwah "oh hai"}} {}]
     bwah))
