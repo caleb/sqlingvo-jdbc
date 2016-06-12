@@ -1,4 +1,4 @@
-(defproject fm.land.sqlingvo-jdbc "0.1.0-SNAPSHOT"
+(defproject fm.land/sqlingvo-jdbc "0.1.0-SNAPSHOT"
   :description "Integration library between SQLingvo and clojure.java.jdbc"
   :url "https://github.com/caleb/sqlingvo-jdbc"
   :license {:name "MIT License"
@@ -9,5 +9,5 @@
   :profiles {:dev {:dependencies [[org.postgresql/postgresql "9.4.1208.jre7"]]}}
 
   :plugins [[s3-wagon-private "1.2.0"]]
-  :repositories [["s3" {:url "http://caleb-maven2.s3.amazonaws.com"}]
-                 ["s3-releases" {:url "s3p://caleb-maven2" :creds :gpg}]])
+  :repositories [["s3" {:url "http://caleb-maven2.s3.amazonaws.com/repo"}]
+                 ["s3-releases" {:url "s3p://caleb-maven2/repo" :creds :gpg}]])
