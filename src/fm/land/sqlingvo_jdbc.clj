@@ -129,7 +129,7 @@
   record (usually you can leave this blank, unless you are using MySQL and need
   to change the :sql-quote option to sqlingvo.util/sql-quote-backtick)"
   ([spec] (db spec {}))
-  ([spec {:keys [sql-quote eval-fn]
+  ([spec {:keys [sql-quote sql-name eval-fn]
           :or {sql-quote sqlingvo-util/sql-quote-double-quote
                sql-name sqlingvo-util/sql-name-underscore
                eval-fn #'sqlingvo-eval}
