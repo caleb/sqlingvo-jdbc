@@ -1,10 +1,8 @@
 (ns fm.land.sqlingvo-jdbc
-  (:require [sqlingvo.core :as sqlingvo]
-            [sqlingvo.db :as sqlingvo-db]
-            [sqlingvo.util :as sqlingvo-util]
-            [clojure.java.jdbc :as jdbc])
-  (:import [org.postgresql.Driver]
-           [java.sql PreparedStatement]))
+  (:require [sqlingvo.core :as sql]
+            [sqlingvo.db :as sql-db]
+            [sqlingvo.util :as sql-util]
+            [clojure.java.jdbc :as jdbc]))
 
 (defn db-conn [conn]
   "Fetch the connection object to use"
@@ -21,8 +19,8 @@
    name - The name of the function we're building. We need this so we can call the proper jdbc function
    params - the list of parameters the function can take (e.g. ([db table] [db] [db table opts]))"
   (for [param params]
-    (let [[db & args] param
-          [args [amp rest]] (split-with #(not= % '&) args)]
+    (let [[db & args]        param
+          [args [_amp rest]] (split-with #(not= % '&) args)]
       (cond
         rest
         `([~db ~@args & ~rest] (apply ~(symbol "jdbc" (str name)) (db-conn ~db) ~@args ~rest))
@@ -49,8 +47,8 @@
         db (second binding)]
     `(db-transaction* ~db
                       (^{:once true} fn* [~tx]
-                                         (let [~tx (swap-spec ~db ~tx)]
-                                           ~@body))
+                       (let [~tx (swap-spec ~db ~tx)]
+                         ~@body))
                       ~@(rest (rest binding)))))
 
 (defmacro with-db-connection
@@ -87,7 +85,11 @@
 (db-function db-do-prepared [db sql-params] [db transaction? sql-params] [db transaction? sql-params opts])
 (db-function db-query-with-resultset [db sql-params func] [db sql-params func opts])
 
-(db-function query [db sql-params] [db sql-params opts])
+;; (db-function query [db sql-params] [db sql-params opts])
+(defn query
+  ([db sql-params] (query db sql-params {}))
+  ([db sql-params opts]
+   (jdbc/query (db-conn db) sql-params (merge (-> db ::jdbc-opts ::query-opts) opts))))
 (db-function find-by-keys [db table columns] [db table columns opts])
 (db-function get-by-id [db table pk-value] [db table pk-value pk-name-or-opts] [db table pk-value pk-name opts])
 (db-function execute! [db sql-params] [db sql-params opts])
@@ -97,82 +99,127 @@
 (db-function update! [db table set-map where-clause] [db table set-map where-clause opts])
 
 (defn sqlingvo-eval [statement]
-  (let [op (:op statement)
-        db (:db statement)]
+  (let [op         (:op statement)
+        db         (:db statement)
+        query-opts (-> db ::jdbc-opts ::query-opts)
+        sql        (sql/sql statement)]
     (case op
-      :select (query db (sqlingvo/sql statement))
-      :intersect (query db (sqlingvo/sql statement))
-      :except (query db (sqlingvo/sql statement))
-      :union (query db (sqlingvo/sql statement))
-      :with (query db (sqlingvo/sql statement))
-      :explain (query db (sqlingvo/sql statement))
-      :insert (if (:returning statement)
-                (query db (sqlingvo/sql statement))
-                (execute! db (sqlingvo/sql statement)))
-      :delete (if (:returning statement)
-                (query db (sqlingvo/sql statement))
-                (execute! db (sqlingvo/sql statement)))
-      :update (if (:returning statement)
-                (query db (sqlingvo/sql statement))
-                (execute! db (sqlingvo/sql statement)))
-      :copy (execute! db (sqlingvo/sql statement))
-      :create-table (execute! db (sqlingvo/sql statement))
-      :drop-table (execute! db (sqlingvo/sql statement))
-      :drop-materialized-view (execute! db (sqlingvo/sql statement))
-      :refresh-materialized-view (execute! db (sqlingvo/sql statement))
-      :truncate (execute! db (sqlingvo/sql statement)))))
+      :select                    (query db sql query-opts)
+      :intersect                 (query db sql query-opts)
+      :except                    (query db sql query-opts)
+      :union                     (query db sql query-opts)
+      :with                      (query db sql query-opts)
+      :explain                   (query db sql query-opts)
+      :insert                    (if (:returning statement)
+                                   (query db sql query-opts)
+                                   (execute! db sql))
+      :delete                    (if (:returning statement)
+                                   (query db sql query-opts)
+                                   (execute! db sql))
+      :update                    (if (:returning statement)
+                                   (query db sql query-opts)
+                                   (execute! db sql))
+      :copy                      (execute! db sql)
+      :create-table              (execute! db sql)
+      :drop-table                (execute! db sql)
+      :drop-materialized-view    (execute! db sql)
+      :refresh-materialized-view (execute! db sql)
+      :truncate                  (execute! db sql))))
+
+(defn identifiers [identifier]
+  (-> identifier
+      (clojure.string/lower-case)
+      (.replace \_ \-)))
 
 (defn db
   "Creates a new database handle for sqlingvo-jdbc.
-  Arguments: spec - The database spec used to connect to your database with
-  clojure.java.jdbc sqlingvo-opts - The options passed to sqlingvo's Database
+
+  Arguments:
+
+  spec - The database spec used to connect to your database with clojure.java.jdbc
+
+  sqlingvo-opts - The options passed to sqlingvo's Database
   record (usually you can leave this blank, unless you are using MySQL and need
-  to change the :sql-quote option to sqlingvo.util/sql-quote-backtick)"
+  to change the :sql-quote option to sqlingvo.util/sql-quote-backtick)
+
+  jdbc-opts - Options for clojure.java.jdbc functions.
+
+  Default sqlingvo-opts:
+  - :sql-quote sqlingvo.util/sql-double-quote-quote
+  - :sql-name  sqlingvo.util/sql-name-underscore
+
+  Default JDBC opts:
+  - ::query-opts These are options passed to clojure.java.jdbc/query when executing SQLingvo statements
+    - :identifiers fm.land.sqlingvo-jdbc/identifiers - (this converts field names from the database to be kebob lower case)"
   ([spec] (db spec {}))
-  ([spec {:keys [sql-quote sql-name eval-fn]
-          :or {sql-quote sqlingvo-util/sql-quote-double-quote
-               sql-name sqlingvo-util/sql-name-underscore
-               eval-fn #'sqlingvo-eval}
-          :as sqlingvo-opts}]
-   (sqlingvo-db/map->Database (merge {:sql-quote sql-quote
-                                      :eval-fn eval-fn
-                                      :sql-name sql-name
-                                      ::spec spec}
-                                     sqlingvo-opts))))
+  ([spec sqlingvo-opts] (db spec sqlingvo-opts {}))
+  ([spec
+    {:keys [sql-quote sql-name eval-fn]
+     :or   {sql-quote sql-util/sql-quote-double-quote
+            sql-name  sql-util/sql-name-underscore
+            eval-fn   #'sqlingvo-eval}
+     :as   sqlingvo-opts}
+    jdbc-opts]
+   (sql-db/map->Database (merge {:sql-quote   sql-quote
+                                 :eval-fn     eval-fn
+                                 :sql-name    sql-name
+                                 ::jdbc-opts  (merge {::query-opts {:identifiers identifiers}}
+                                                     jdbc-opts)
+                                 ::spec       spec}
+                                sqlingvo-opts))))
 
 (comment
   (def d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"))
-  (sqlingvo/sql (sqlingvo/select d [:encrypted-password]
-     (sqlingvo/from :products)))
+  (def uppercase-d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo" {} {::query-opts {:identifiers #(clojure.string/upper-case %)}}))
+  (sql/sql (sql/select d [:encrypted-password]
+                       (sql/from :products)))
 
-  (sqlingvo/sql (sqlingvo/select (sqlingvo-db/postgresql) [:encrypted-password]
-                  (sqlingvo/from :products)))
-
-  (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
-    @(sqlingvo/drop-table d [:products])
-    @(sqlingvo/drop-table d [:films]))
+  (sql/sql (sql/select (sql-db/postgresql) [:encrypted-password]
+                       (sql/from :products)))
 
   (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
-    @(sqlingvo/create-table d :products
-       (sqlingvo/column :id :bigserial :primary-key? true)
-       (sqlingvo/column :name :varchar)
-       (sqlingvo/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-       (sqlingvo/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
-    @(sqlingvo/create-table d :films
-       (sqlingvo/column :code :char :length 5 :primary-key? true)
-       (sqlingvo/column :title :varchar :length 40 :not-null? true)
-       (sqlingvo/column :did :integer :not-null? true)
-       (sqlingvo/column :date-prod :date)
-       (sqlingvo/column :kind :varchar :length 10)
-       (sqlingvo/column :len :interval)
-       (sqlingvo/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-       (sqlingvo/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now))))
+    @(sql/drop-table d [:products])
+    @(sql/drop-table d [:films]))
+
+  (let [d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo")]
+    @(sql/create-table d :products
+                       (sql/column :id :bigserial :primary-key? true)
+                       (sql/column :name :varchar)
+                       (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+                       (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
+    @(sql/create-table d :films
+                       (sql/column :code :char :length 5 :primary-key? true)
+                       (sql/column :title :varchar :length 40 :not-null? true)
+                       (sql/column :did :integer :not-null? true)
+                       (sql/column :date-prod :date)
+                       (sql/column :UPPER-CASE-DATE :date)
+                       (sql/column :kind :varchar :length 10)
+                       (sql/column :len :interval)
+                       (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+                       (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now))))
+
+  (try
+    @(sql/insert d :films []
+                 (sql/values [{:code (str (rand-int 1000)) :title "The Room" :did 42}]))
+    (catch Exception e
+      (println (.. e getNextException))))
+
+  @(sql/select d [:*]
+               (sql/from :films))
+
+  (with-db-connection [conn d]
+    (execute! conn ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
+    (query conn ["SELECT * FROM products"]))
+
+  (with-db-connection [conn uppercase-d]
+    (execute! conn ["INSERT INTO products (name) VALUES ('Oh Hai Mark')"])
+    (query conn ["SELECT * FROM products"]))
 
   (let [spec {:subprotocol "postgresql"
-              :subname "//localhost/sqlingvo?user=postgres&password=gnome"
-              :classname "org.postgresql.Driver"}
+              :subname     "//localhost/sqlingvo?user=postgres&password=gnome"
+              :classname   "org.postgresql.Driver"}
         spec "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"
-        d (db spec)]
+        d    (db spec)]
 
 
     (execute! d ["DELETE FROM products"])
@@ -198,38 +245,38 @@
     (query d ["SELECT * FROM products"])
     (get-connection d)
 
-    @(sqlingvo/select d [:*] (sqlingvo/from :products))
+    @(sql/select d [:*] (sql/from :products))
     (with-db-transaction [tx d]
-      @(sqlingvo/insert tx :products []
-                        (sqlingvo/values [{:name "INSERT FROM SQLINGVO"}]))
+      @(sql/insert tx :products []
+                   (sql/values [{:name "INSERT FROM SQLINGVO"}]))
       ;; (db-set-rollback-only! tx)
-      @(sqlingvo/select tx [:*]
-                        (sqlingvo/from :products)))
+      @(sql/select tx [:*]
+                   (sql/from :products)))
 
     (with-db-connection [conn d]
       (with-db-transaction [tx conn]
-        @(sqlingvo/select tx [:*] (sqlingvo/from :products))
-        @(sqlingvo/delete tx :products (sqlingvo/where '(ilike :name "%SQLINGVO")))
-        @(sqlingvo/select tx [:*] (sqlingvo/from :products))))
+        @(sql/select tx [:*] (sql/from :products))
+        @(sql/delete tx :products (sql/where '(ilike :name "%SQLINGVO")))
+        @(sql/select tx [:*] (sql/from :products))))
 
-    @(sqlingvo/intersect (sqlingvo/select d [:name] (sqlingvo/from :products))
-                         (sqlingvo/select d [:title] (sqlingvo/from :films)))
+    @(sql/intersect (sql/select d [:name] (sql/from :products))
+                    (sql/select d [:title] (sql/from :films)))
 
-    @(sqlingvo/explain d (sqlingvo/intersect (sqlingvo/select d [:name] (sqlingvo/from :products))
-                                             (sqlingvo/select d [:title] (sqlingvo/from :films))))
+    @(sql/explain d (sql/intersect (sql/select d [:name] (sql/from :products))
+                                   (sql/select d [:title] (sql/from :films))))
     ;; @(sqlingvo/truncate d [:products :films])
 
-    @(sqlingvo/union (sqlingvo/select d [:name] (sqlingvo/from :products))
-                     (sqlingvo/select d [:title] (sqlingvo/from :films)))
+    @(sql/union (sql/select d [:name] (sql/from :products))
+                (sql/select d [:title] (sql/from :films)))
 
-    @(sqlingvo/with d [:bwah (sqlingvo/select d [:* (sqlingvo/as "Oh HAI MARK" :tommy)]
-                                              (sqlingvo/from :products))]
-       (sqlingvo/select d [:*] (sqlingvo/from :bwah)))
+    @(sql/with d [:bwah (sql/select d [:* (sql/as "Oh HAI MARK" :tommy)]
+                                    (sql/from :products))]
+               (sql/select d [:*] (sql/from :bwah)))
 
     (with-db-metadata [metadata d]
       (let [table-info (jdbc/metadata-query (.getTables metadata
-                                                    nil nil nil
-                                                    (into-array ["TABLE" "VIEW"])))]
+                                                        nil nil nil
+                                                        (into-array ["TABLE" "VIEW"])))]
         table-info))
     )
 
