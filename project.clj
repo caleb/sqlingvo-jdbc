@@ -8,6 +8,6 @@
                  [org.clojure/java.jdbc "0.6.1"]]
   :profiles {:dev {:dependencies [[org.postgresql/postgresql "9.4.1208.jre7"]]}}
 
-  :plugins [[s3-wagon-private "1.2.0"]]
+  :plugins [[s3-wagon-private "1.3.0"]]
   :repositories [["s3" {:url "http://caleb-maven2.s3.amazonaws.com/repo"}]
                  ["s3-releases" {:url "s3p://caleb-maven2/repo" :creds :gpg}]])
