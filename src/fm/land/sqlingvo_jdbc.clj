@@ -141,53 +141,47 @@
   There are two keys for configuring how SQLingvo-JDBC works:
 
   ::sqlingvo-opts - The options passed to sqlingvo's Database
-  record (usually you can leave this blank, unless you are using MySQL and need
-  to change the :sql-quote option to sqlingvo.util/sql-quote-backtick)
+  record
 
   ::jdbc-opts - Options for clojure.java.jdbc functions.
-
-  Default ::sqlingvo-opts:
-  - :sql-quote sqlingvo.util/sql-double-quote-quote
-  - :sql-name  sqlingvo.util/sql-name-underscore
 
   Default ::jdbc-opts:
   - ::query-opts These are options passed to clojure.java.jdbc/query when executing SQLingvo statements
     - :identifiers fm.land.sqlingvo-jdbc/identifiers - (this converts field names from the database to be kebob lower case)"
   ([spec] (db spec {}))
   ([spec opts]
-   (let [sqlingvo-opts (merge {:sql-quote sql-util/sql-quote-double-quote
-                               :eval-fn   #'sqlingvo-eval
-                               :sql-name  sql-util/sql-name-underscore}
+   (let [sqlingvo-opts (merge {:eval-fn   #'sqlingvo-eval}
                               (::sqlingvo-opts opts))
          jdbc-opts     (merge {::query-opts {:identifiers identifiers}}
                               (::jdbc-opts opts))]
-     (sql-db/map->Database (merge {::jdbc-opts jdbc-opts
-                                   ::spec      spec}
-                                  sqlingvo-opts)))))
+     (sql-db/db spec (merge {::jdbc-opts jdbc-opts
+                             ::spec      spec}
+                            sqlingvo-opts)))))
 
 (comment
   (def d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo"))
   (def uppercase-d (db "jdbc:postgresql://postgres:gnome@localhost:5432/sqlingvo" {::jdbc-opts {::query-opts {:identifiers #(clojure.string/upper-case %)}}}))
 
-  @(sql/drop-table d [:products])
-  @(sql/drop-table d [:films])
+  (do
+    @(sql/drop-table d [:products])
+    @(sql/drop-table d [:films])
 
-  @(sql/create-table d :products
-     (sql/column :id :bigserial :primary-key? true)
-     (sql/column :name :varchar)
-     (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-     (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
+    @(sql/create-table d :products
+       (sql/column :id :bigserial :primary-key? true)
+       (sql/column :name :varchar)
+       (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+       (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
 
-  @(sql/create-table d :films
-     (sql/column :code :char :length 5 :primary-key? true)
-     (sql/column :title :varchar :length 40 :not-null? true)
-     (sql/column :did :integer :not-null? true)
-     (sql/column :date-prod :date)
-     (sql/column :UPPER-CASE-DATE :date)
-     (sql/column :kind :varchar :length 10)
-     (sql/column :len :interval)
-     (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
-     (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now)))
+    @(sql/create-table d :films
+       (sql/column :code :char :size 5 :primary-key? true)
+       (sql/column :title :varchar :size 40 :not-null? true)
+       (sql/column :did :integer :not-null? true)
+       (sql/column :date-prod :date)
+       (sql/column :UPPER-CASE-DATE :date)
+       (sql/column :kind :varchar :size 10)
+       (sql/column :len :interval)
+       (sql/column :created-at :timestamp-with-time-zone :not-null? true :default '(now))
+       (sql/column :updated-at :timestamp-with-time-zone :not-null? true :default '(now))))
 
   (try
     @(sql/insert d :films []
